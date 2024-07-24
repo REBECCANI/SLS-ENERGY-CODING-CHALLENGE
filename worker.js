@@ -1,5 +1,11 @@
 const { parentPort, workerData, isMainThread } = require('worker_threads');
 const db = require('./db');
+const {
+  calculateInteractionScore,
+  calculateHashtagScore,
+  calculateKeywordScore, // Corrected function name
+  calculateFinalScore // Corrected function name
+} = require('./ranking');
 
 const validateUserData = (user) => {
   return user && user.id && user.created_at;
@@ -94,6 +100,20 @@ const insertContacts = async (contacts) => {
   }
 };
 
+const calculateScores = (user, tweets) => {
+  const interactionScore = calculateInteractionScore(user, tweets);
+  const hashtagScore = calculateHashtagScore(user, tweets);
+  const keywordScore = calculateKeywordScore(user, tweets); // Corrected function name
+  const finalScore = calculateFinalScore(interactionScore, hashtagScore, keywordScore); // Corrected function name
+
+  return {
+    interactionScore,
+    hashtagScore,
+    keywordScore,
+    finalScore
+  };
+};
+
 async function processChunk(chunk) {
   try {
     console.log('Processing chunk with', chunk.length, 'tweets');
@@ -155,6 +175,12 @@ async function processChunk(chunk) {
     });
     const contactsInserted = await insertContacts(contacts);
 
+    // Calculate and log scores for each user
+    users.forEach(({ user }) => {
+      const scores = calculateScores(user, validTweets.filter(tweet => tweet.user.id === user.id));
+      console.log(`Scores for user ${user.id}:`, scores);
+    });
+
     return { usersInserted, tweetsInserted, hashtagsInserted, contactsInserted };
   } catch (error) {
     console.error('Error processing chunk:', error);
@@ -164,9 +190,13 @@ async function processChunk(chunk) {
 
 if (isMainThread) {
   console.log('This script is designed to be run as a worker thread.');
-  console.log('Please run the main script (read_json.js) instead.');
+  console.log('Please run the main script to start processing.');
 } else {
   processChunk(workerData)
-    .then(result => parentPort.postMessage(result))
-    .catch(error => parentPort.postMessage({ error: error.message }));
+    .then(result => {
+      parentPort.postMessage({ result });
+    })
+    .catch(error => {
+      parentPort.postMessage({ error: error.message });
+    });
 }
